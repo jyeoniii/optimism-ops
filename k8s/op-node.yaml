@@ -1,0 +1,123 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: op-node
+  name: op-node
+spec:
+  type: LoadBalancer
+  ports:
+    - name: "8545"
+      port: 8545
+      targetPort: 8545
+    - name: "7545"
+      port: 7545
+      targetPort: 8545
+    - name: "9003"
+      port: 9003
+      targetPort: 9003
+    - name: "7300"
+      port: 7300
+      targetPort: 7300
+    - name: "6060"
+      port: 6060
+      targetPort: 6060
+  selector:
+    app: op-node
+status:
+  loadBalancer: {}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: op-node
+  name: op-node
+spec:
+  replicas: 1
+  serviceName: op-node
+  selector:
+    matchLabels:
+      app: op-node
+  template:
+    metadata:
+      labels:
+        app: op-node
+    spec:
+      containers:
+        - args:
+            - op-node
+            - --l1=ws://l1:8546
+            - --l2=http://l2:8551
+            - --l2.jwt-secret=/config/test-jwt-secret.txt
+            - --sequencer.enabled
+            - --sequencer.l1-confs=0
+            - --verifier.l1-confs=0
+            - --p2p.sequencer.key=8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba
+            - --rollup.config=/repo/genesis/devnet-20230216-0/rollup.json
+            - --rpc.addr=0.0.0.0
+            - --rpc.port=8545
+            - --p2p.listen.ip=0.0.0.0
+            - --p2p.listen.tcp=9003
+            - --p2p.listen.udp=9003
+            - --snapshotlog.file=/op_log/snapshot.log
+            - --p2p.priv.path=/config/p2p-node-key.txt
+            - --metrics.enabled
+            - --metrics.addr=0.0.0.0
+            - --metrics.port=7300
+            - --pprof.enabled
+          image: kfangw/ops-bedrock_op-node
+          name: op-node
+          ports:
+            - containerPort: 8545
+            - containerPort: 9003
+            - containerPort: 7300
+            - containerPort: 6060
+          resources: {}
+          volumeMounts:
+            - mountPath: /repo
+              name: git-repository
+            - mountPath: /config
+              name: config
+            - mountPath: /op_log
+              name: op-log
+      restartPolicy: Always
+      initContainers:
+        - name: init
+          image: alpine/git
+          args:
+            - clone
+            - --single-branch
+            - --
+            - https://github.com/iskraworld/optimism-ops
+            - /repo
+          volumeMounts:
+            - mountPath: /repo
+              name: git-repository
+        - name: init2
+          image: alpine
+          command: ["/bin/sh"]
+          args:
+            - -c
+            - cp /repo/secrets/test-jwt-secret.txt /config/test-jwt-secret.txt;
+            - cp /repo/secrets/p2p-sequencer-key.txt /config/p2p-sequencer-key.txt;
+            - cp /repo/secrets/p2p-node-key.txt /config/p2p-node-key.txt;
+          volumeMounts:
+            - mountPath: /repo
+              name: git-repository
+            - mountPath: /config
+              name: config
+      volumes:
+        - name: git-repository
+          emptyDir: {}
+        - name: config
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: op-log
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 100Mi
